@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+gunicorn
+sentence-transformers
+openai
+requests
+python-dotenv
+redis
