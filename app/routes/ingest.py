@@ -19,12 +19,11 @@ class IngestRequest(BaseModel):
 def generate_chunk_id(product_id: int, chunk: str) -> str:
     """
     Generate deterministic UUID per product + chunk.
-    Fully compatible with Qdrant.
+    Ensures idempotent upserts in Qdrant Cloud.
     """
     normalized = chunk.strip().lower()
     base = f"{product_id}:{normalized}"
 
-    # UUID5 = deterministic + valid UUID
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, base))
 
 
@@ -33,46 +32,98 @@ def ingest(
     request: IngestRequest,
     _: str = Depends(verify_api_key)
 ):
-    if not request.text or not request.text.strip():
-        raise HTTPException(status_code=400, detail="Empty text")
+    try:
 
-    collection = f"product_{request.product_id}"
+        # -----------------------------
+        # 🔹 Validate Input
+        # -----------------------------
+        if not request.text or not request.text.strip():
+            raise HTTPException(status_code=400, detail="Empty text")
 
-    ensure_collection(collection)
+        collection = f"product_{request.product_id}"
 
-    chunks = chunk_text(request.text)
+        # -----------------------------
+        # 🔹 VERY IMPORTANT FIX
+        # Ensure collection exists BEFORE upsert
+        # -----------------------------
+        ensure_collection(collection)
 
-    if not chunks:
-        raise HTTPException(status_code=400, detail="No valid chunks generated")
+        # -----------------------------
+        # 🔹 Chunk Text
+        # -----------------------------
+        chunks = chunk_text(request.text)
 
-    vectors = get_embeddings_batch(chunks)
+        if not chunks:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid chunks generated"
+            )
 
-    if len(vectors) != len(chunks):
-        raise HTTPException(status_code=500, detail="Embedding mismatch error")
+        # -----------------------------
+        # 🔹 Generate Embeddings (Batch)
+        # -----------------------------
+        vectors = get_embeddings_batch(chunks)
 
-    points = []
+        if len(vectors) != len(chunks):
+            raise HTTPException(
+                status_code=500,
+                detail="Embedding mismatch error"
+            )
 
-    for chunk, vector in zip(chunks, vectors):
-        chunk_id = generate_chunk_id(request.product_id, chunk)
+        # -----------------------------
+        # 🔹 Build Points
+        # -----------------------------
+        points = []
 
-        points.append({
-            "id": chunk_id,
-            "vector": vector,
-            "payload": {
-                "text": chunk
-            }
-        })
+        for chunk, vector in zip(chunks, vectors):
 
-    res = upsert_points(collection, points)
+            if not vector:
+                continue
 
-    if res.status_code != 200:
+            chunk_id = generate_chunk_id(
+                request.product_id,
+                chunk
+            )
+
+            points.append({
+                "id": chunk_id,
+                "vector": vector,
+                "payload": {
+                    "text": chunk
+                }
+            })
+
+        if not points:
+            raise HTTPException(
+                status_code=500,
+                detail="No valid embeddings generated"
+            )
+
+        # -----------------------------
+        # 🔹 Upsert to Qdrant Cloud
+        # -----------------------------
+        res = upsert_points(collection, points)
+
+        if res.status_code != 200:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Qdrant error: {res.text}"
+            )
+
+        # -----------------------------
+        # 🔹 Success Response
+        # -----------------------------
+        return {
+            "collection": collection,
+            "stored_chunks": len(points),
+            "deduplicated": True
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Qdrant error: {res.text}"
+            detail=f"Ingest failed: {str(e)}"
         )
-
-    return {
-        "stored_chunks": len(points),
-        "deduplicated": True,
-        "collection": collection
-    }

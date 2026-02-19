@@ -1,5 +1,4 @@
-import re
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
@@ -7,7 +6,6 @@ from app.services.embedding import get_embedding
 from app.services.qdrant import search
 from app.services.llm import generate_answer
 from app.core.config import settings
-from app.core.security import verify_api_key
 
 router = APIRouter()
 
@@ -18,58 +16,95 @@ class AskRequest(BaseModel):
 
 
 @router.post("/ask")
-def ask(
-    request: AskRequest,
-    _: str = Depends(verify_api_key)
-):
+def ask(request: AskRequest):
 
-    collection = f"product_{request.product_id}"
+    try:
+        question = request.question.strip()
+        question_lower = question.lower()
 
-    query_vector = get_embedding(request.question)
-    res = search(collection, query_vector)
+        # -----------------------------
+        # 🔹 Greeting Handler
+        # -----------------------------
+        greetings = [
+            "hi", "hello", "hey", "hii",
+            "namaste", "hello ji", "hi ji"
+        ]
 
-    if res.status_code != 200:
-        raise HTTPException(status_code=404, detail="Product not found")
+        if question_lower in greetings:
+            return PlainTextResponse(
+                "Hi 👋 I’m your product assistant.\n"
+                "You can ask me anything related to this product!"
+            )
 
-    results = res.json().get("result", [])
+        collection = f"product_{request.product_id}"
 
-    filtered = [
-        r for r in results
-        if r.get("score", 0) >= settings.SIMILARITY_THRESHOLD
-    ]
+        # -----------------------------
+        # 🔹 Generate embedding
+        # -----------------------------
+        try:
+            query_vector = get_embedding(question)
+        except Exception:
+            return PlainTextResponse(
+                "⚠️ I’m having trouble processing your question. Please try again."
+            )
 
-    if not filtered:
+        # -----------------------------
+        # 🔹 Search Qdrant
+        # -----------------------------
+        try:
+            res = search(collection, query_vector)
+        except Exception:
+            return PlainTextResponse(
+                "⚠️ I’m temporarily unable to access product data. Please try again shortly."
+            )
+
+        results = res.json().get("result", [])
+
+        # -----------------------------
+        # 🔹 Similarity Filter
+        # -----------------------------
+        filtered = [
+            r for r in results
+            if r.get("score", 0) >= settings.SIMILARITY_THRESHOLD
+        ]
+
+        # -----------------------------
+        # 🔹 Off-topic Friendly Reply
+        # -----------------------------
+        if not filtered:
+            return PlainTextResponse(
+                "I’m here to help only with questions related to this product 😊\n"
+                "Please ask something about the product and I’ll be happy to help!"
+            )
+
+        # -----------------------------
+        # 🔹 Build Context Safely
+        # -----------------------------
+        context_parts = []
+        for r in filtered:
+            payload = r.get("payload", {})
+            if "text" in payload:
+                context_parts.append(payload["text"])
+
+        context = "\n".join(context_parts)
+        context = context[:settings.MAX_CONTEXT_LENGTH]
+
+        # -----------------------------
+        # 🔹 Generate Answer
+        # -----------------------------
+        try:
+            answer = generate_answer(
+                context=context,
+                question=question
+            )
+            return PlainTextResponse(answer)
+
+        except Exception:
+            return PlainTextResponse(
+                "⚠️ I’m having a temporary issue generating the answer. Please try again."
+            )
+
+    except Exception:
         return PlainTextResponse(
-            "I couldn't find relevant information in this product's documents."
+            "Something went wrong 😔 Please try again."
         )
-
-    context = "\n".join(
-        r["payload"]["text"]
-        for r in filtered
-        if "payload" in r
-    )
-
-    context = context[:settings.MAX_CONTEXT_LENGTH]
-
-    question_lower = request.question.lower()
-
-    general_keywords = [
-        "about", "overview", "summary", "introduction",
-        "what is this", "what is this product",
-        "tell me about", "details about",
-        "ye kya hai", "kis kaam ka hai",
-        "iske bare me", "batao"
-    ]
-
-    if any(keyword in question_lower for keyword in general_keywords):
-        mode = "summary"
-    else:
-        mode = "normal"
-
-    answer = generate_answer(
-        context=context,
-        question=request.question,
-        mode=mode
-    )
-
-    return PlainTextResponse(answer)

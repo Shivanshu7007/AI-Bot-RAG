@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends
-from app.routes import ingest, ask
+from app.routes import ask
+from app.routes import ingest   # 👈 ADD THIS
 from app.core.security import verify_api_key
 from app.core.config import settings
 
@@ -10,15 +11,15 @@ app = FastAPI(
     openapi_url=None if settings.ENV == "production" else "/openapi.json"
 )
 
-# 🔐 Protect all API routes
-app.include_router(
-    ingest.router,
-    dependencies=[Depends(verify_api_key)]
-)
-
+# 🔹 ASK ROUTE
 app.include_router(
     ask.router,
     dependencies=[Depends(verify_api_key)]
+)
+
+# 🔹 INGEST ROUTE  👈 ADD THIS
+app.include_router(
+    ingest.router
 )
 
 @app.get("/health")

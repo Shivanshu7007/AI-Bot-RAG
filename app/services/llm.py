@@ -9,31 +9,17 @@ client = OpenAI(
 
 def generate_answer(context: str, question: str, mode: str = "normal"):
 
-    if mode == "summary":
-        system_prompt = """
-You are a helpful product assistant.
+    system_prompt = """
+You are a friendly and professional product assistant.
 
-Rules:
-- Answer ONLY from provided context.
-- Do NOT invent information.
-- If context does not contain the answer, say:
-  "I couldn't find relevant information in this product's documents."
-- Keep tone friendly and professional.
+IMPORTANT RULES:
+- Answer ONLY using the provided context.
+- Do NOT invent or guess information.
+- If the question is not related to the provided context,
+  politely explain that you only answer product-specific questions.
+- Respond in the same language style as the user (English or Hinglish).
+- Keep the tone friendly and helpful.
 - Do NOT use markdown symbols like ** or ###.
-- Use clean formatting.
-"""
-    else:
-        system_prompt = """
-You are a strict retrieval-based assistant.
-
-Rules:
-- Answer ONLY from provided context.
-- Do NOT invent information.
-- If answer is not found, say:
-  "I couldn't find relevant information in this product's documents."
-- If user asks for bullet points, respond using '-' dash format.
-- Do NOT use markdown symbols like **.
-- Keep formatting clean and readable.
 """
 
     completion = client.chat.completions.create(
@@ -52,7 +38,7 @@ Question:
             }
         ],
         temperature=0.2,
-        max_tokens=700
+        max_tokens=600
     )
 
     return completion.choices[0].message.content.strip()
