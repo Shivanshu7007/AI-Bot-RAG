@@ -68,6 +68,28 @@ def upsert_points(name: str, points):
         raise
 
 
+def delete_collection(name: str) -> bool:
+    """Delete a Qdrant collection. Returns True if deleted, False if not found."""
+    try:
+        r = requests.delete(
+            f"{settings.QDRANT_URL}/collections/{name}",
+            headers=HEADERS,
+            timeout=10
+        )
+
+        if r.status_code == 200:
+            return True
+        elif r.status_code == 404:
+            return False
+        else:
+            logger.error(f"Qdrant delete_collection unexpected status {r.status_code}: {r.text}")
+            raise Exception(f"Qdrant returned {r.status_code}: {r.text}")
+
+    except Exception as e:
+        logger.error(f"Qdrant delete_collection error: {e}")
+        raise
+
+
 def search(name: str, vector):
 
     payload = {

@@ -58,7 +58,10 @@ def ask(request: AskRequest):
                 "⚠️ I’m temporarily unable to access product data. Please try again shortly."
             )
 
-        results = res.json().get("result", [])
+        try:
+            results = res.json().get("result", [])
+        except (ValueError, AttributeError):
+            results = []
 
         # -----------------------------
         # 🔹 Similarity Filter

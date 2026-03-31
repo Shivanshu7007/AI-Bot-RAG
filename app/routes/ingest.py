@@ -1,12 +1,11 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.embedding import get_embeddings_batch
 from app.services.qdrant import ensure_collection, upsert_points
 from app.utils.chunker import chunk_text
-from app.core.security import verify_api_key
 
 router = APIRouter()
 
@@ -17,21 +16,14 @@ class IngestRequest(BaseModel):
 
 
 def generate_chunk_id(product_id: int, chunk: str) -> str:
-    """
-    Generate deterministic UUID per product + chunk.
-    Ensures idempotent upserts in Qdrant Cloud.
-    """
+    """Generate deterministic UUID per product+chunk for idempotent upserts."""
     normalized = chunk.strip().lower()
     base = f"{product_id}:{normalized}"
-
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, base))
 
 
 @router.post("/ingest")
-def ingest(
-    request: IngestRequest,
-    _: str = Depends(verify_api_key)
-):
+def ingest(request: IngestRequest):
     try:
 
         # -----------------------------

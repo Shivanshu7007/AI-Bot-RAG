@@ -23,10 +23,11 @@ class Settings:
     QDRANT_URL = os.getenv("QDRANT_URL")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
-    SIMILARITY_THRESHOLD = 0.15
-    MAX_CONTEXT_LENGTH = 2500
-    CHUNK_SIZE = 800
-    CHUNK_OVERLAP = 150
+    # RAG tuning — configurable via env vars
+    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.30"))
+    MAX_CONTEXT_LENGTH = int(os.getenv("MAX_CONTEXT_LENGTH", "2500"))
+    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))
+    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "150"))
 
 
 settings = Settings()
