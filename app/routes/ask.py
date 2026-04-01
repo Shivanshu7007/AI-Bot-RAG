@@ -10,9 +10,16 @@ from app.core.config import settings
 router = APIRouter()
 
 
+from typing import List, Optional
+
+class HistoryMessage(BaseModel):
+    sender: str   # "user" or "bot"
+    text: str
+
 class AskRequest(BaseModel):
     product_id: int
     question: str
+    history: Optional[List[HistoryMessage]] = []
 
 
 @router.post("/ask")
@@ -25,15 +32,14 @@ def ask(request: AskRequest):
         # -----------------------------
         # 🔹 Greeting Handler
         # -----------------------------
-        greetings = [
-            "hi", "hello", "hey", "hii",
-            "namaste", "hello ji", "hi ji"
-        ]
+        greetings = {
+            "hi", "hello", "hey", "hii", "helo",
+            "namaste", "hello ji", "hi ji", "hey there"
+        }
 
         if question_lower in greetings:
             return PlainTextResponse(
-                "Hi 👋 I’m your product assistant.\n"
-                "You can ask me anything related to this product!"
+                "How can I help you with this product today? 😊"
             )
 
         collection = f"product_{request.product_id}"
@@ -98,7 +104,8 @@ def ask(request: AskRequest):
         try:
             answer = generate_answer(
                 context=context,
-                question=question
+                question=question,
+                history=request.history or []
             )
             return PlainTextResponse(answer)
 
