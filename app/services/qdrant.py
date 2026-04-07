@@ -90,6 +90,25 @@ def delete_collection(name: str) -> bool:
         raise
 
 
+def collection_has_documents(name: str) -> bool:
+    """Returns True if collection exists and has at least one point."""
+    try:
+        r = requests.get(
+            f"{settings.QDRANT_URL}/collections/{name}",
+            headers=HEADERS,
+            timeout=10
+        )
+        if r.status_code == 404:
+            return False
+        if r.status_code != 200:
+            raise Exception(f"Qdrant returned {r.status_code}: {r.text}")
+        points_count = r.json().get("result", {}).get("points_count", 0)
+        return points_count > 0
+    except Exception as e:
+        logger.error(f"Qdrant collection_has_documents error: {e}")
+        raise
+
+
 def search(name: str, vector):
 
     payload = {

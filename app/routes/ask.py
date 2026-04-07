@@ -1,9 +1,9 @@
 from fastapi import APIRouter
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.services.embedding import get_embedding
-from app.services.qdrant import search
+from app.services.qdrant import search, collection_has_documents
 from app.services.llm import generate_answer
 from app.core.config import settings
 
@@ -45,6 +45,19 @@ def ask(request: AskRequest):
         collection = f"product_{request.product_id}"
 
         # -----------------------------
+        # 🔹 Knowledge base existence check
+        # -----------------------------
+        try:
+            has_docs = collection_has_documents(collection)
+        except Exception:
+            return PlainTextResponse(
+                "⚠️ I'm temporarily unable to access product data. Please try again shortly."
+            )
+
+        if not has_docs:
+            return JSONResponse({"status": "no_knowledge_base"})
+
+        # -----------------------------
         # 🔹 Generate embedding
         # -----------------------------
         try:
@@ -82,8 +95,9 @@ def ask(request: AskRequest):
         # -----------------------------
         if not filtered:
             return PlainTextResponse(
-                "I’m here to help only with questions related to this product 😊\n"
-                "Please ask something about the product and I’ll be happy to help!"
+                "I was not able to find this in the product documentation. "
+                "Please contact Cellogen support at contact@cellogenbiotech.com "
+                "or +91-9217371321 for assistance."
             )
 
         # -----------------------------
