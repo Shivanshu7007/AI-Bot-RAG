@@ -1,15 +1,16 @@
-# Pin all versions for reproducible builds.
-# To update: pip install -U <package> && pip freeze > requirements.txt
+# Production dependencies for CPU-only hosting platforms such as Render.
+# The extra index allows pip to resolve the CPU wheel for torch instead of
+# pulling NVIDIA/CUDA packages that are not usable on standard Render instances.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 gunicorn==23.0.0
+torch==2.5.1+cpu
+transformers==4.46.3
 sentence-transformers==3.3.1
 openai==1.57.4
 requests==2.32.3
 python-dotenv==1.0.1
 redis==5.2.1
 huggingface-hub==0.26.3
-
-# Testing
-pytest==8.3.4
-httpx==0.28.1
