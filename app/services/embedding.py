@@ -18,31 +18,43 @@ hf_token = os.getenv("HF_TOKEN")
 if hf_token:
     try:
         login(token=hf_token)
-        logger.info("✅ HuggingFace authenticated")
+        logger.info("HuggingFace authenticated")
     except Exception as e:
         logger.warning(f"HF login failed: {e}")
 else:
-    logger.warning("⚠️ HF_TOKEN not set, running anonymous")
+    logger.warning("HF_TOKEN not set, running anonymous")
 
 # ---------------- Redis ----------------
-# ---------------- Redis ----------------
+_redis_client: redis.Redis | None = None
+
 try:
     redis_host = os.getenv("REDIS_HOST", "redis")
     redis_port = int(os.getenv("REDIS_PORT", 6379))
-
-    r = redis.Redis(
+    _redis_client = redis.Redis(
         host=redis_host,
         port=redis_port,
-        decode_responses=True
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
     )
-    r.ping()
-    REDIS_AVAILABLE = True
-    logger.info("✅ Redis connected")
+    _redis_client.ping()
+    logger.info("Redis connected")
+except Exception as e:
+    _redis_client = None
+    logger.warning(f"Redis not available at startup, running without cache: {e}")
 
-except Exception:
-    r = None
-    REDIS_AVAILABLE = False
-    logger.warning("⚠️ Redis not available, running without cache")
+
+def _get_redis() -> redis.Redis | None:
+    """Return the Redis client if reachable, otherwise None. Checks on each call."""
+    if _redis_client is None:
+        return None
+    try:
+        _redis_client.ping()
+        return _redis_client
+    except Exception as e:
+        logger.warning(f"Redis ping failed, skipping cache: {e}")
+        return None
+
 
 # ---------------- Load Model ----------------
 model = SentenceTransformer(
@@ -52,47 +64,43 @@ model = SentenceTransformer(
 
 CACHE_TTL = 86400
 
+
 # ---------------- Single Embedding ----------------
 def get_embedding(text: str) -> List[float]:
 
     key = hashlib.sha256(text.encode()).hexdigest()
+    r = _get_redis()
 
     if r:
         try:
             cached = r.get(key)
             if cached:
                 return json.loads(cached)
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Redis cache read failed: {e}")
 
-    vector = model.encode(
-        text,
-        normalize_embeddings=True
-    ).tolist()
+    vector = model.encode(text, normalize_embeddings=True).tolist()
 
     if r:
         try:
             r.set(key, json.dumps(vector), ex=CACHE_TTL)
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Redis cache write failed: {e}")
 
     return vector
 
 
-# ==============================
-# 🔹 BATCH EMBEDDINGS (OPTIMIZED)
-# ==============================
-
+# ---------------- Batch Embeddings ----------------
 def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
 
     keys = [hashlib.sha256(t.encode()).hexdigest() for t in texts]
+    r = _get_redis()
 
-    cached_results = []
-    missing_indices = []
-    missing_texts = []
+    cached_results: List[List[float] | None] = [None] * len(texts)
+    missing_indices: List[int] = []
+    missing_texts: List[str] = []
 
-    # Try Redis batch fetch
-    if REDIS_AVAILABLE:
+    if r:
         try:
             cached_values = r.mget(keys)
         except Exception as e:
@@ -103,13 +111,11 @@ def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
 
     for i, value in enumerate(cached_values):
         if value:
-            cached_results.append(json.loads(value))
+            cached_results[i] = json.loads(value)
         else:
-            cached_results.append(None)
             missing_indices.append(i)
             missing_texts.append(texts[i])
 
-    # Compute missing in one batch
     if missing_texts:
         new_vectors = model.encode(
             missing_texts,
@@ -117,13 +123,13 @@ def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
             normalize_embeddings=True
         ).tolist()
 
+        r2 = _get_redis()
         for idx, vector in zip(missing_indices, new_vectors):
             cached_results[idx] = vector
-
-            if REDIS_AVAILABLE:
+            if r2:
                 try:
-                    r.set(keys[idx], json.dumps(vector), ex=CACHE_TTL)
+                    r2.set(keys[idx], json.dumps(vector), ex=CACHE_TTL)
                 except Exception as e:
-                    logger.warning(f"Redis batch write failed: {e}")
+                    logger.warning(f"Redis batch write failed for key {keys[idx]}: {e}")
 
-    return cached_results
+    return cached_results  # type: ignore[return-value]

@@ -1,4 +1,6 @@
 import logging
+from typing import Optional
+
 from openai import OpenAI, OpenAIError
 from app.core.config import settings
 
@@ -32,7 +34,9 @@ STRICT RULES — follow every rule exactly:
 """
 
 
-def generate_answer(context: str, question: str, history: list = [], mode: str = "normal") -> str:
+def generate_answer(context: str, question: str, history: Optional[list] = None) -> str:
+    history = history or []
+
     try:
         history_messages = []
         for msg in history[-6:]:

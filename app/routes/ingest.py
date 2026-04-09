@@ -105,10 +105,13 @@ def ingest(request: IngestRequest):
         # -----------------------------
         # 🔹 Success Response
         # -----------------------------
+        total_chunks = len(chunks)
+        stored = len(points)
         return {
             "collection": collection,
-            "stored_chunks": len(points),
-            "deduplicated": True
+            "stored_chunks": stored,
+            "skipped_chunks": total_chunks - stored,
+            "deduplicated": stored < total_chunks
         }
 
     except HTTPException:
